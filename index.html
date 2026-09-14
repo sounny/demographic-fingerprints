@@ -1,0 +1,770 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Population DNA: Interactive Demographic Fingerprints</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <script src="https://unpkg.com/topojson-client@3"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <style>
+        :root {
+            --bg-base: #070B14;
+            --bg-surface: #0F172A;
+            --bg-card: #1E293B;
+            --text-main: #F8FAFC;
+            --text-muted: #94A3B8;
+            --male-pop: #38BDF8;
+            --female-pop: #F43F5E;
+            --male-mort: #60A5FA;
+            --female-mort: #C084FC;
+            --fertility: #A855F7;
+            --border: #334155;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--bg-base);
+            color: var(--text-main);
+            overflow: hidden;
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Top Bar */
+        #topbar {
+            height: 40px;
+            background-color: var(--bg-surface);
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            padding: 0 16px;
+            justify-content: space-between;
+            flex-shrink: 0;
+            z-index: 10;
+        }
+        .brand { font-weight: 800; font-size: 14px; display: flex; align-items: center; gap: 8px;}
+        .brand-pill { background: var(--fertility); color: white; padding: 2px 8px; border-radius: 12px; font-size: 11px;}
+        
+        .controls { display: flex; align-items: center; gap: 12px; }
+        .breadcrumbs { font-size: 13px; color: var(--text-muted); display:flex; align-items:center; gap: 6px; }
+        .breadcrumbs span { cursor: pointer; transition: color 0.2s;}
+        .breadcrumbs span:hover { color: var(--text-main); }
+        .breadcrumbs span.active { color: var(--text-main); font-weight: 600; cursor: default;}
+        
+        input#search { background: var(--bg-card); border: 1px solid var(--border); color: var(--text-main); padding: 4px 10px; border-radius: 4px; font-size: 12px; outline: none; width: 150px;}
+        input#search:focus { border-color: var(--male-pop); }
+        
+        button#export-btn { background: var(--bg-card); color: var(--text-main); border: 1px solid var(--border); padding: 4px 10px; border-radius: 4px; font-size: 12px; cursor: pointer; transition: all 0.2s;}
+        button#export-btn:hover { background: var(--border); }
+
+        /* Story Chips */
+        #story-chips {
+            display: flex;
+            gap: 8px;
+            padding: 8px 16px;
+            background-color: var(--bg-base);
+            flex-shrink: 0;
+            z-index: 9;
+            border-bottom: 1px solid #1e293b;
+        }
+        .chip {
+            background-color: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 4px 12px;
+            font-size: 11px;
+            color: var(--text-muted);
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .chip:hover {
+            background-color: var(--border);
+            color: var(--text-main);
+        }
+
+        /* Main Content */
+        #main {
+            display: flex;
+            flex: 1;
+            overflow: hidden;
+            position: relative;
+        }
+
+        /* Map Panel */
+        #panel-left {
+            width: 58%;
+            height: 100%;
+            position: relative;
+            background-color: var(--bg-base);
+            border-right: 1px solid var(--border);
+        }
+        #map-svg {
+            width: 100%;
+            height: 100%;
+        }
+        
+        .state { fill: #1E293B; stroke: #475569; stroke-width: 0.5; transition: fill 0.2s; cursor: pointer;}
+        .state:hover { fill: #0EA5E9; }
+        .state.active { fill: #0284C7; stroke: #38BDF8; stroke-width: 1; }
+        
+        .county { fill: transparent; stroke: #334155; stroke-width: 0.2; cursor: pointer; transition: fill 0.2s;}
+        .county:hover { fill: rgba(14, 165, 233, 0.5); }
+        .county.active { fill: rgba(56, 189, 248, 0.7); stroke: #E0F2FE; stroke-width: 0.5; }
+        
+        .state-mesh { fill: none; stroke: rgba(255,255,255,0.1); stroke-width: 0.5; pointer-events: none;}
+
+        .watermark {
+            position: absolute;
+            bottom: 16px;
+            left: 16px;
+            font-size: 11px;
+            color: var(--text-muted);
+            pointer-events: none;
+            opacity: 0.6;
+        }
+
+        /* Glyph Panel */
+        #panel-right {
+            width: 42%;
+            height: 100%;
+            background-color: var(--bg-surface);
+            display: flex;
+            flex-direction: column;
+            position: relative;
+        }
+
+        #glyph-container {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+            position: relative;
+        }
+        
+        #glyph-svg {
+            width: 100%;
+            height: 100%;
+            max-width: 600px;
+            max-height: 600px;
+        }
+
+        /* Metadata Strip */
+        #metadata {
+            height: 60px;
+            background-color: #0B1120;
+            border-top: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: space-around;
+            flex-shrink: 0;
+            padding: 0 16px;
+        }
+        .meta-box {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+        }
+        .meta-label { font-size: 10px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em;}
+        .meta-value { font-size: 16px; font-weight: 700; color: var(--text-main); }
+        .meta-box:first-child .meta-value { color: var(--male-pop); }
+
+        /* Loading */
+        #loading {
+            position: absolute;
+            inset: 0;
+            background: rgba(7, 11, 20, 0.9);
+            z-index: 100;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+            color: var(--text-main);
+            font-weight: 600;
+            transition: opacity 0.5s;
+        }
+        .spinner { width: 40px; height: 40px; border: 3px solid rgba(56, 189, 248, 0.3); border-radius: 50%; border-top-color: var(--male-pop); animation: spin 1s ease-in-out infinite; margin-bottom: 16px;}
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* Tooltip */
+        .tooltip {
+            position: absolute;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            padding: 8px 12px;
+            border-radius: 4px;
+            font-size: 12px;
+            pointer-events: none;
+            opacity: 0;
+            z-index: 50;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        }
+    </style>
+</head>
+<body>
+
+    <div id="loading">
+        <div class="spinner"></div>
+        <div id="loading-text">Loading Population DNA Data...</div>
+    </div>
+
+    <div id="topbar">
+        <div class="brand">
+            <span class="brand-pill">DNA</span>
+            <span>Population DNA</span>
+            <span style="font-weight:400; font-size:11px; color:#94A3B8; margin-left:8px;">Dr. Moulay Anwar Sounny-Slitine, TSU</span>
+        </div>
+        <div class="controls">
+            <div class="breadcrumbs" id="breadcrumbs">
+                <span data-level="nation" class="active">USA</span>
+            </div>
+            <input type="text" id="search" placeholder="Search state (e.g., Texas)" />
+            <button id="export-btn">Export PNG</button>
+        </div>
+    </div>
+
+    <div id="story-chips">
+        <div class="chip" data-search="Utah">Utah (Young & Fertile)</div>
+        <div class="chip" data-search="Florida">Florida (Retirement)</div>
+        <div class="chip" data-search="District of Columbia">DC (Urban Singles)</div>
+        <div class="chip" data-search="Texas">Texas</div>
+        <div class="chip" data-search="Maine">Maine (Aging)</div>
+        <div class="chip" data-search="California">California</div>
+    </div>
+
+    <div id="main">
+        <div id="panel-left">
+            <svg id="map-svg"></svg>
+            <div class="watermark">Click a state to zoom. Click a county to inspect.</div>
+            <div class="tooltip" id="map-tooltip"></div>
+        </div>
+        
+        <div id="panel-right">
+            <div id="glyph-container">
+                <svg id="glyph-svg" viewBox="0 0 600 600" preserveAspectRatio="xMidYMid meet"></svg>
+            </div>
+            <div id="metadata">
+                <div class="meta-box">
+                    <span class="meta-label">Location</span>
+                    <span class="meta-value" id="meta-name">United States</span>
+                </div>
+                <div class="meta-box">
+                    <span class="meta-label">Total Population</span>
+                    <span class="meta-value" id="meta-pop">---</span>
+                </div>
+                <div class="meta-box">
+                    <span class="meta-label">Median Age</span>
+                    <span class="meta-value" id="meta-age">---</span>
+                </div>
+                <div class="meta-box">
+                    <span class="meta-label">Total Fertility Rate</span>
+                    <span class="meta-value" id="meta-tfr">---</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- DATA STRUCTURES AND STATE ---
+        const state = {
+            usTopo: null,
+            countyTopo: null,
+            nationalDemo: null,
+            stateDemo: {},
+            countyDemo: {},
+            currentLevel: 'nation', // nation, state, county
+            currentFips: 'US',
+            zoomTransform: d3.zoomIdentity
+        };
+
+        const config = {
+            mapWidth: 0,
+            mapHeight: 0,
+            glyphWidth: 600,
+            glyphHeight: 600,
+            hubRadius: 50,
+            armStep: 12
+        };
+
+        // DOM elements
+        const mapSvg = d3.select("#map-svg");
+        const mapG = mapSvg.append("g");
+        const countyG = mapG.append("g").attr("id", "counties-layer").style("opacity", 0);
+        const stateG = mapG.append("g").attr("id", "states-layer");
+        const meshG = mapG.append("g").attr("id", "mesh-layer");
+        const tooltip = d3.select("#map-tooltip");
+        const glyphSvg = d3.select("#glyph-svg");
+        const breadcrumbs = d3.select("#breadcrumbs");
+        const searchInput = d3.select("#search");
+
+        // Map projection
+        const projection = d3.geoAlbersUsa();
+        const path = d3.geoPath().projection(projection);
+        
+        const zoom = d3.zoom()
+            .scaleExtent([1, 8])
+            .on("zoom", (e) => {
+                mapG.attr("transform", e.transform);
+                state.zoomTransform = e.transform;
+            });
+        
+        mapSvg.call(zoom).on("wheel.zoom", null).on("dblclick.zoom", null); // Disable manual zoom
+
+        // --- MOCK DATA GENERATORS (Fallback if fetch fails) ---
+        function generateDummyDemographics(fips, name) {
+            const arr18 = (base, variance) => Array.from({length:18}, (_,i) => {
+                let val = base + Math.random()*variance - variance/2;
+                if(i > 10) val = val * (18-i)/8;
+                return Math.max(0.1, val);
+            });
+            const arr7 = () => Array.from({length:7}, (_,i) => {
+                let val = (20 + (i==2||i==3?20:0) + Math.random()*5);
+                return val;
+            });
+            
+            return {
+                fips: fips,
+                name: name,
+                total_pop: Math.floor(Math.random() * 10000000 + 500000),
+                median_age: (32 + Math.random() * 10).toFixed(1),
+                pop_m_pct: arr18(3, 1),
+                pop_f_pct: arr18(3.1, 1),
+                mort_m_pct: Array.from({length:18}, (_,i)=> (i<12?0.2: (i-10)*1.5)),
+                mort_f_pct: Array.from({length:18}, (_,i)=> (i<12?0.15: (i-10)*1.4)),
+                fertility_pasfr: arr7(),
+                tfr: (1.5 + Math.random()).toFixed(2)
+            };
+        }
+
+        // --- INITIALIZATION AND FETCHING ---
+        async function init() {
+            try {
+                // Dimensions
+                config.mapWidth = document.getElementById("panel-left").clientWidth;
+                config.mapHeight = document.getElementById("panel-left").clientHeight;
+                projection.translate([config.mapWidth / 2, config.mapHeight / 2]);
+                projection.scale(config.mapWidth * 1.2);
+
+                d3.select(window).on("resize", () => {
+                    config.mapWidth = document.getElementById("panel-left").clientWidth;
+                    config.mapHeight = document.getElementById("panel-left").clientHeight;
+                    projection.translate([config.mapWidth / 2, config.mapHeight / 2]);
+                    projection.scale(config.mapWidth * 1.2);
+                    if(state.currentLevel === 'nation') resetMap();
+                    else drawMap(); // Re-render paths
+                });
+
+                const fetchData = async (url) => {
+                    try {
+                        const r = await fetch(url);
+                        if (!r.ok) throw new Error("Not found");
+                        return await r.json();
+                    } catch(e) {
+                        return null;
+                    }
+                };
+                
+                d3.select("#loading-text").text("Loading Topologies...");
+                let usTopo = await fetchData('data/us_states_topo.json');
+                let countyTopo = await fetchData('data/us_counties_topo.json');
+                
+                if (!usTopo || !countyTopo) {
+                    console.warn("Local topo files missing, fetching from CDN...");
+                    const cdnTopo = await fetch('https://cdn.jsdelivr.net/npm/us-atlas@3/counties-albers-10m.json').then(r=>r.json());
+                    state.usTopo = topojson.feature(cdnTopo, cdnTopo.objects.states);
+                    state.countyTopo = topojson.feature(cdnTopo, cdnTopo.objects.counties);
+                    state.mesh = topojson.mesh(cdnTopo, cdnTopo.objects.states, (a, b) => a !== b);
+                    path.projection(null);
+                } else {
+                    state.usTopo = topojson.feature(usTopo, usTopo.objects.states);
+                    state.countyTopo = topojson.feature(countyTopo, countyTopo.objects.counties);
+                    state.mesh = topojson.mesh(usTopo, usTopo.objects.states, (a, b) => a !== b);
+                }
+
+                d3.select("#loading-text").text("Loading Demographics...");
+                let natDemo = await fetchData('data/us_national_demographics.json');
+                let stDemo = await fetchData('data/us_states_demographics.json');
+                let coDemo = await fetchData('data/texas_counties_demographics.json');
+
+                if (!natDemo) natDemo = generateDummyDemographics('US', 'United States');
+                if (!stDemo) {
+                    stDemo = {};
+                    state.usTopo.features.forEach(f => {
+                        stDemo[f.id] = generateDummyDemographics(f.id, f.properties.name || "State "+f.id);
+                    });
+                }
+                if (!coDemo) {
+                    coDemo = {};
+                    state.countyTopo.features.forEach(f => {
+                        coDemo[f.id] = generateDummyDemographics(f.id, f.properties.name || "County "+f.id);
+                    });
+                }
+
+                state.nationalDemo = natDemo;
+                state.stateDemo = stDemo;
+                state.countyDemo = coDemo;
+
+                // Build mapping for search
+                state.stateNameMap = {};
+                state.usTopo.features.forEach(f => {
+                    const name = f.properties.name || stDemo[f.id]?.name;
+                    if(name) state.stateNameMap[name.toLowerCase()] = f;
+                });
+
+                // Hide loading
+                d3.select("#loading").style("opacity", 0);
+                setTimeout(() => d3.select("#loading").style("display", "none"), 500);
+
+                // Initial render
+                drawMap();
+                updateView('nation', 'US', 'United States');
+                setupEvents();
+
+            } catch (err) {
+                console.error(err);
+                d3.select("#loading-text").text("Error loading data.").style("color", "red");
+            }
+        }
+
+        // --- MAP RENDERING ---
+        function drawMap() {
+            countyG.selectAll(".county")
+                .data(state.countyTopo.features)
+                .join("path")
+                .attr("class", "county")
+                .attr("d", path)
+                .attr("id", d => "county-"+d.id)
+                .on("mouseover", (e, d) => showTooltip(e, d.properties.name || "County "+d.id))
+                .on("mousemove", moveTooltip)
+                .on("mouseout", hideTooltip)
+                .on("click", (e, d) => {
+                    e.stopPropagation();
+                    selectCounty(d);
+                });
+
+            stateG.selectAll(".state")
+                .data(state.usTopo.features)
+                .join("path")
+                .attr("class", "state")
+                .attr("d", path)
+                .attr("id", d => "state-"+d.id)
+                .on("mouseover", (e, d) => showTooltip(e, d.properties.name || "State "+d.id))
+                .on("mousemove", moveTooltip)
+                .on("mouseout", hideTooltip)
+                .on("click", (e, d) => {
+                    e.stopPropagation();
+                    selectState(d);
+                });
+
+            meshG.append("path")
+                .datum(state.mesh)
+                .attr("class", "state-mesh")
+                .attr("d", path);
+                
+            mapSvg.on("click", resetMap);
+        }
+
+        function selectState(feature) {
+            const bounds = path.bounds(feature);
+            const dx = bounds[1][0] - bounds[0][0];
+            const dy = bounds[1][1] - bounds[0][1];
+            const x = (bounds[0][0] + bounds[1][0]) / 2;
+            const y = (bounds[0][1] + bounds[1][1]) / 2;
+            const scale = Math.max(1, Math.min(8, 0.9 / Math.max(dx / config.mapWidth, dy / config.mapHeight)));
+            const translate = [config.mapWidth / 2 - scale * x, config.mapHeight / 2 - scale * y];
+
+            mapSvg.transition().duration(750).call(
+                zoom.transform, 
+                d3.zoomIdentity.translate(translate[0], translate[1]).scale(scale)
+            );
+
+            stateG.selectAll(".state").classed("active", false).style("opacity", 0.3);
+            d3.select("#state-"+feature.id).classed("active", true).style("opacity", 1);
+            
+            countyG.transition().duration(750).style("opacity", 1);
+            
+            const stateFips = feature.id.substring(0, 2);
+            countyG.selectAll(".county").style("display", d => d.id.startsWith(stateFips) ? "block" : "none")
+                   .classed("active", false);
+
+            const sName = feature.properties.name || state.stateDemo[feature.id]?.name || "State";
+            updateView('state', feature.id, sName);
+        }
+
+        function selectCounty(feature) {
+            countyG.selectAll(".county").classed("active", false);
+            d3.select("#county-"+feature.id).classed("active", true);
+            
+            const stateFips = feature.id.substring(0,2);
+            const sName = state.stateDemo[stateFips]?.name || "State";
+            const cName = feature.properties.name || state.countyDemo[feature.id]?.name || "County";
+            
+            updateView('county', feature.id, cName, {stateId: stateFips, stateName: sName});
+        }
+
+        function resetMap() {
+            mapSvg.transition().duration(750).call(
+                zoom.transform, d3.zoomIdentity
+            );
+            stateG.selectAll(".state").classed("active", false).style("opacity", 1);
+            countyG.transition().duration(750).style("opacity", 0);
+            setTimeout(() => { countyG.selectAll(".county").classed("active", false); }, 750);
+            updateView('nation', 'US', 'United States');
+        }
+
+        // --- GLYPH RENDERING ---
+        function updateView(level, fips, name, parentData=null) {
+            state.currentLevel = level;
+            state.currentFips = fips;
+            
+            let data = null;
+            if (level === 'nation') data = state.nationalDemo;
+            else if (level === 'state') data = state.stateDemo[fips] || generateDummyDemographics(fips, name);
+            else if (level === 'county') data = state.countyDemo[fips] || generateDummyDemographics(fips, name);
+
+            if (!data) return;
+
+            let bcHtml = `<span data-level="nation" ${level==='nation'?'class="active"':''}>USA</span>`;
+            if (level === 'state') {
+                bcHtml += ` <span>&rsaquo;</span> <span data-level="state" data-id="${fips}" class="active">${name}</span>`;
+            } else if (level === 'county') {
+                bcHtml += ` <span>&rsaquo;</span> <span data-level="state" data-id="${parentData.stateId}">${parentData.stateName}</span>`;
+                bcHtml += ` <span>&rsaquo;</span> <span data-level="county" data-id="${fips}" class="active">${name}</span>`;
+            }
+            breadcrumbs.html(bcHtml);
+            
+            breadcrumbs.selectAll("span[data-level]").on("click", function() {
+                const lvl = d3.select(this).attr("data-level");
+                const id = d3.select(this).attr("data-id");
+                if (lvl === 'nation') resetMap();
+                else if (lvl === 'state' && level === 'county') {
+                    const st = state.usTopo.features.find(f => f.id === id);
+                    if(st) selectState(st);
+                }
+            });
+
+            d3.select("#meta-name").text(name);
+            d3.select("#meta-pop").text(data.total_pop.toLocaleString());
+            d3.select("#meta-age").text(data.median_age);
+            d3.select("#meta-tfr").text(data.tfr);
+
+            drawGlyph(data, level !== 'nation' ? state.nationalDemo : null);
+        }
+
+        function drawGlyph(data, baselineData) {
+            glyphSvg.selectAll("*").remove();
+
+            const cx = 300, cy = 280;
+            const g = glyphSvg.append("g");
+
+            const drawArm = (angleDeg, label, isFertility=false) => {
+                const angle = angleDeg * Math.PI / 180;
+                const dx = Math.cos(angle), dy = Math.sin(angle);
+                const px = -Math.sin(angle), py = Math.cos(angle);
+                
+                const armG = g.append("g").attr("class", "arm");
+                
+                const armLen = isFertility ? 7 * config.armStep + 20 : 18 * config.armStep + 20;
+                armG.append("line")
+                    .attr("x1", cx + config.hubRadius * dx)
+                    .attr("y1", cy + config.hubRadius * dy)
+                    .attr("x2", cx + (config.hubRadius + armLen) * dx)
+                    .attr("y2", cy + (config.hubRadius + armLen) * dy)
+                    .attr("stroke", "rgba(255,255,255,0.1)")
+                    .attr("stroke-width", 2);
+                    
+                const lx = cx + (config.hubRadius + armLen + 15) * dx;
+                const ly = cy + (config.hubRadius + armLen + 15) * dy;
+                armG.append("text")
+                    .attr("x", lx)
+                    .attr("y", ly)
+                    .attr("text-anchor", "middle")
+                    .attr("alignment-baseline", "middle")
+                    .attr("fill", "var(--text-muted)")
+                    .attr("font-size", "12px")
+                    .attr("font-weight", "600")
+                    .attr("transform", `rotate(${angleDeg + (angleDeg > -90 && angleDeg < 90 ? 0 : 180)}, ${lx}, ${ly})`)
+                    .text(label.toUpperCase());
+                    
+                return {dx, dy, px, py, armG};
+            };
+
+            const popArm = drawArm(-135, "Population");
+            const mortArm = drawArm(-45, "Mortality");
+            const fertArm = drawArm(90, "Fertility", true);
+
+            const scalePop = d3.scaleLinear().domain([0, 6]).range([0, 80]); 
+            const scaleMort = d3.scaleLinear().domain([0, 25]).range([0, 80]); 
+            const scaleFert = d3.scaleLinear().domain([0, 40]).range([0, 60]); 
+            
+            if (baselineData) {
+                renderBars(baselineData, popArm, mortArm, fertArm, scalePop, scaleMort, scaleFert, true);
+            }
+            renderBars(data, popArm, mortArm, fertArm, scalePop, scaleMort, scaleFert, false);
+
+            const hub = g.append("g").attr("class", "hub");
+            hub.append("circle")
+                .attr("cx", cx).attr("cy", cy)
+                .attr("r", config.hubRadius)
+                .attr("fill", "var(--bg-card)")
+                .attr("stroke", "var(--border)")
+                .attr("stroke-width", 2);
+                
+            const fo = hub.append("foreignObject")
+                .attr("x", cx - config.hubRadius)
+                .attr("y", cy - config.hubRadius)
+                .attr("width", config.hubRadius * 2)
+                .attr("height", config.hubRadius * 2);
+                
+            fo.append("xhtml:div")
+                .style("width", "100%")
+                .style("height", "100%")
+                .style("display", "flex")
+                .style("flex-direction", "column")
+                .style("align-items", "center")
+                .style("justify-content", "center")
+                .style("text-align", "center")
+                .style("color", "var(--text-main)")
+                .style("font-size", "10px")
+                .html(`
+                    <div style="font-weight:700; color:var(--male-pop); font-size:11px">${data.median_age}</div>
+                    <div style="font-size:8px; color:var(--text-muted)">Med Age</div>
+                `);
+        }
+
+        function renderBars(data, popArm, mortArm, fertArm, scalePop, scaleMort, scaleFert, isGhost) {
+            const cx = 300, cy = 280;
+            const drawCohorts = (arm, maleData, femaleData, scale, maleColor, femaleColor) => {
+                const {dx, dy, px, py, armG} = arm;
+                
+                for(let i=0; i<18; i++) {
+                    const r = config.hubRadius + (i + 1) * config.armStep;
+                    const bx = cx + r * dx;
+                    const by = cy + r * dy;
+                    
+                    const mLen = scale(maleData[i] || 0);
+                    const fLen = scale(femaleData[i] || 0);
+                    
+                    if(isGhost) {
+                        armG.append("line")
+                            .attr("x1", bx).attr("y1", by)
+                            .attr("x2", bx - mLen * px).attr("y2", by - mLen * py)
+                            .attr("stroke", "rgba(255,255,255,0.2)")
+                            .attr("stroke-width", 2)
+                            .attr("stroke-dasharray", "2,2");
+                        armG.append("line")
+                            .attr("x1", bx).attr("y1", by)
+                            .attr("x2", bx + fLen * px).attr("y2", by + fLen * py)
+                            .attr("stroke", "rgba(255,255,255,0.2)")
+                            .attr("stroke-width", 2)
+                            .attr("stroke-dasharray", "2,2");
+                    } else {
+                        armG.append("line")
+                            .attr("x1", bx).attr("y1", by)
+                            .attr("x2", bx - mLen * px).attr("y2", by - mLen * py)
+                            .attr("stroke", maleColor)
+                            .attr("stroke-width", 6)
+                            .attr("stroke-linecap", "round");
+                        armG.append("line")
+                            .attr("x1", bx).attr("y1", by)
+                            .attr("x2", bx + fLen * px).attr("y2", by + fLen * py)
+                            .attr("stroke", femaleColor)
+                            .attr("stroke-width", 6)
+                            .attr("stroke-linecap", "round");
+                    }
+                }
+            };
+
+            const drawFertility = (arm, fertData, scale, color) => {
+                const {dx, dy, px, py, armG} = arm;
+                for(let i=0; i<7; i++) {
+                    const r = config.hubRadius + (i + 1) * config.armStep;
+                    const bx = cx + r * dx;
+                    const by = cy + r * dy;
+                    const len = scale(fertData[i] || 0) / 2;
+                    
+                    if(isGhost) {
+                        armG.append("line")
+                            .attr("x1", bx - len * px).attr("y1", by - len * py)
+                            .attr("x2", bx + len * px).attr("y2", by + len * py)
+                            .attr("stroke", "rgba(255,255,255,0.2)")
+                            .attr("stroke-width", 2)
+                            .attr("stroke-dasharray", "2,2");
+                    } else {
+                        armG.append("line")
+                            .attr("x1", bx - len * px).attr("y1", by - len * py)
+                            .attr("x2", bx + len * px).attr("y2", by + len * py)
+                            .attr("stroke", color)
+                            .attr("stroke-width", 6)
+                            .attr("stroke-linecap", "round");
+                    }
+                }
+            };
+
+            drawCohorts(popArm, data.pop_m_pct, data.pop_f_pct, scalePop, "var(--male-pop)", "var(--female-pop)");
+            drawCohorts(mortArm, data.mort_m_pct, data.mort_f_pct, scaleMort, "var(--male-mort)", "var(--female-mort)");
+            drawFertility(fertArm, data.fertility_pasfr, scaleFert, "var(--fertility)");
+        }
+
+        // --- UTILS & EVENTS ---
+        function showTooltip(e, text) {
+            tooltip.style("opacity", 1).html(text);
+        }
+        function moveTooltip(e) {
+            tooltip.style("left", (e.pageX + 10) + "px")
+                   .style("top", (e.pageY + 10) + "px");
+        }
+        function hideTooltip() {
+            tooltip.style("opacity", 0);
+        }
+
+        function setupEvents() {
+            searchInput.on("keypress", function(e) {
+                if (e.key === 'Enter') {
+                    const val = this.value.trim().toLowerCase();
+                    if (state.stateNameMap[val]) {
+                        selectState(state.stateNameMap[val]);
+                    } else {
+                        const match = Object.keys(state.stateNameMap).find(k => k.includes(val));
+                        if(match) {
+                            selectState(state.stateNameMap[match]);
+                            this.value = state.stateNameMap[match].properties.name || match;
+                        }
+                    }
+                }
+            });
+
+            d3.selectAll(".chip").on("click", function() {
+                const search = d3.select(this).attr("data-search").toLowerCase();
+                searchInput.node().value = d3.select(this).text();
+                
+                const match = Object.keys(state.stateNameMap).find(k => k.includes(search));
+                if(match) selectState(state.stateNameMap[match]);
+            });
+
+            d3.select("#export-btn").on("click", async () => {
+                const rightPanel = document.getElementById("panel-right");
+                try {
+                    const canvas = await html2canvas(rightPanel, {backgroundColor: "#0F172A"});
+                    const link = document.createElement("a");
+                    link.download = `population_dna_${state.currentFips}.png`;
+                    link.href = canvas.toDataURL("image/png");
+                    link.click();
+                } catch(e) {
+                    console.error("Export failed", e);
+                    alert("Export failed.");
+                }
+            });
+        }
+
+        init();
+
+    </script>
+</body>
+</html>
