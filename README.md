@@ -4,7 +4,7 @@
 
 A full-screen, immersive geospatial laboratory that visualizes the Demographic Triad across the United States at national, state, and county scales.
 
-**Live App:** [https://sounny.github.io/population-dna/](https://sounny.github.io/population-dna/)
+**Live App:** [https://sounny.github.io/demographic-fingerprints/](https://sounny.github.io/demographic-fingerprints/)
 
 ### The Demographic Triad
 
