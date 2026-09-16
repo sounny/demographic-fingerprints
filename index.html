@@ -650,26 +650,41 @@
                     .attr("stroke-width", 1.5)
                     .attr("stroke-dasharray", "2,2");
                     
-                const lx = cx + (config.hubRadius + armLen + 20) * dx;
-                const ly = cy + (config.hubRadius + armLen + 20) * dy;
+                const lx = cx + (config.hubRadius + armLen + 24) * dx;
+                const ly = cy + (config.hubRadius + armLen + 24) * dy;
                 
-                armG.append("text")
+                // Crisp title pill badge
+                const badgeG = armG.append("g");
+                const bw = 108, bh = 24;
+                const badgeColor = label === 'POPULATION' ? 'var(--male-pop)' : (label === 'MORTALITY' ? '#818CF8' : 'var(--fertility)');
+                
+                badgeG.append("rect")
+                    .attr("x", lx - bw/2)
+                    .attr("y", ly - bh/2)
+                    .attr("width", bw)
+                    .attr("height", bh)
+                    .attr("rx", 12)
+                    .attr("fill", "#070B14")
+                    .attr("stroke", badgeColor)
+                    .attr("stroke-width", 1.2);
+                    
+                badgeG.append("text")
                     .attr("x", lx)
-                    .attr("y", ly)
+                    .attr("y", ly + 0.5)
                     .attr("text-anchor", "middle")
                     .attr("alignment-baseline", "middle")
-                    .attr("fill", "var(--text-main)")
-                    .attr("font-size", "12px")
-                    .attr("font-weight", "700")
+                    .attr("fill", "#F8FAFC")
+                    .attr("font-size", "11px")
+                    .attr("font-weight", "800")
                     .attr("letter-spacing", "0.08em")
                     .text(label.toUpperCase());
                     
                 return {dx, dy, px, py, armG};
             };
 
-            const popArm = drawArmSpine(-135, "Population");
-            const mortArm = drawArmSpine(-45, "Mortality");
-            const fertArm = drawArmSpine(90, "Fertility", true);
+            const popArm = drawArmSpine(-135, "POPULATION");
+            const mortArm = drawArmSpine(-45, "MORTALITY");
+            const fertArm = drawArmSpine(90, "FERTILITY", true);
 
             // Calibrated scales: population cohorts ~0-5%, mortality cohorts ~0-12%, fertility PASFR ~0-40%
             const scalePop = d3.scaleLinear().domain([0, 5]).range([0, 85]); 
@@ -716,8 +731,8 @@
                 .style("text-align", "center")
                 .style("user-select", "none")
                 .html(`
-                    <div style="font-weight:800; color:var(--male-pop); font-size:15px; line-height:1.1">${data.median_age}</div>
-                    <div style="font-size:9px; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.06em">Med Age</div>
+                    <div style="font-weight:800; color:var(--male-pop); font-size:16px; line-height:1.1">${data.median_age}</div>
+                    <div style="font-size:9.5px; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.06em; font-weight:600">Med Age</div>
                 `);
         }
 
@@ -730,93 +745,123 @@
                 {idx: 17, label: '85+'}
             ];
 
-            // Population arm milestone labels
-            milestones.forEach(m => {
-                const r = config.hubRadius + (m.idx + 1) * config.armStep;
-                const bx = cx + r * popArm.dx;
-                const by = cy + r * popArm.dy;
-                const tx = bx - 14 * popArm.px;
-                const ty = by - 14 * popArm.py;
-                popArm.armG.append("text")
-                    .attr("x", tx).attr("y", ty)
+            const drawArmLabels = (arm, isMortality=false) => {
+                // Milestone badges centered directly in the 30px clear center channel
+                milestones.forEach(m => {
+                    const r = config.hubRadius + (m.idx + 1) * config.armStep;
+                    const bx = cx + r * arm.dx;
+                    const by = cy + r * arm.dy;
+                    
+                    const badge = arm.armG.append("g").attr("class", "milestone-badge");
+                    const bw = 28, bh = 13;
+                    badge.append("rect")
+                        .attr("x", bx - bw/2)
+                        .attr("y", by - bh/2)
+                        .attr("width", bw)
+                        .attr("height", bh)
+                        .attr("rx", 3)
+                        .attr("fill", "#070B14")
+                        .attr("stroke", "#475569")
+                        .attr("stroke-width", 0.9);
+                    badge.append("text")
+                        .attr("x", bx)
+                        .attr("y", by + 0.5)
+                        .attr("text-anchor", "middle")
+                        .attr("alignment-baseline", "middle")
+                        .attr("fill", "#F8FAFC")
+                        .attr("font-size", "8.5px")
+                        .attr("font-family", "Inter")
+                        .attr("font-weight", "700")
+                        .text(m.label);
+                });
+
+                // Pill tags for Male and Female
+                const rTag = config.hubRadius + 22;
+                const tagBx = cx + rTag * arm.dx;
+                const tagBy = cy + rTag * arm.dy;
+                
+                const mColor = isMortality ? "var(--male-mort)" : "var(--male-pop)";
+                const fColor = isMortality ? "var(--female-mort)" : "var(--female-pop)";
+                
+                // Male tag
+                const mTagX = tagBx - 56 * arm.px;
+                const mTagY = tagBy - 56 * arm.py;
+                const mPill = arm.armG.append("g");
+                mPill.append("rect")
+                    .attr("x", mTagX - 24)
+                    .attr("y", mTagY - 9)
+                    .attr("width", 48)
+                    .attr("height", 18)
+                    .attr("rx", 9)
+                    .attr("fill", "#0B1120")
+                    .attr("stroke", mColor)
+                    .attr("stroke-width", 1);
+                mPill.append("text")
+                    .attr("x", mTagX)
+                    .attr("y", mTagY + 0.5)
                     .attr("text-anchor", "middle")
                     .attr("alignment-baseline", "middle")
-                    .attr("fill", "#64748B")
-                    .attr("font-size", "8px")
+                    .attr("fill", mColor)
+                    .attr("font-size", "9.5px")
                     .attr("font-family", "Inter")
-                    .attr("font-weight", "600")
-                    .text(m.label);
-            });
+                    .attr("font-weight", "800")
+                    .attr("letter-spacing", "0.04em")
+                    .text("MALE");
 
-            // Male / Female tags on Population arm
-            popArm.armG.append("text")
-                .attr("x", cx + (config.hubRadius + 15) * popArm.dx - 40 * popArm.px)
-                .attr("y", cy + (config.hubRadius + 15) * popArm.dy - 40 * popArm.py)
-                .attr("fill", "var(--male-pop)")
-                .attr("font-size", "9px")
-                .attr("font-weight", "700")
-                .attr("text-anchor", "middle")
-                .text("MALE");
-
-            popArm.armG.append("text")
-                .attr("x", cx + (config.hubRadius + 15) * popArm.dx + 40 * popArm.px)
-                .attr("y", cy + (config.hubRadius + 15) * popArm.dy + 40 * popArm.py)
-                .attr("fill", "var(--female-pop)")
-                .attr("font-size", "9px")
-                .attr("font-weight", "700")
-                .attr("text-anchor", "middle")
-                .text("FEMALE");
-
-            // Mortality arm milestone labels
-            milestones.forEach(m => {
-                const r = config.hubRadius + (m.idx + 1) * config.armStep;
-                const bx = cx + r * mortArm.dx;
-                const by = cy + r * mortArm.dy;
-                const tx = bx + 14 * mortArm.px;
-                const ty = by + 14 * mortArm.py;
-                mortArm.armG.append("text")
-                    .attr("x", tx).attr("y", ty)
+                // Female tag
+                const fTagX = tagBx + 58 * arm.px;
+                const fTagY = tagBy + 58 * arm.py;
+                const fPill = arm.armG.append("g");
+                fPill.append("rect")
+                    .attr("x", fTagX - 27)
+                    .attr("y", fTagY - 9)
+                    .attr("width", 54)
+                    .attr("height", 18)
+                    .attr("rx", 9)
+                    .attr("fill", "#0B1120")
+                    .attr("stroke", fColor)
+                    .attr("stroke-width", 1);
+                fPill.append("text")
+                    .attr("x", fTagX)
+                    .attr("y", fTagY + 0.5)
                     .attr("text-anchor", "middle")
                     .attr("alignment-baseline", "middle")
-                    .attr("fill", "#64748B")
-                    .attr("font-size", "8px")
+                    .attr("fill", fColor)
+                    .attr("font-size", "9.5px")
                     .attr("font-family", "Inter")
-                    .attr("font-weight", "600")
-                    .text(m.label);
-            });
+                    .attr("font-weight", "800")
+                    .attr("letter-spacing", "0.04em")
+                    .text("FEMALE");
+            };
 
-            // Male / Female tags on Mortality arm
-            mortArm.armG.append("text")
-                .attr("x", cx + (config.hubRadius + 15) * mortArm.dx - 40 * mortArm.px)
-                .attr("y", cy + (config.hubRadius + 15) * mortArm.dy - 40 * mortArm.py)
-                .attr("fill", "var(--male-mort)")
-                .attr("font-size", "9px")
-                .attr("font-weight", "700")
-                .attr("text-anchor", "middle")
-                .text("MALE");
+            drawArmLabels(popArm, false);
+            drawArmLabels(mortArm, true);
 
-            mortArm.armG.append("text")
-                .attr("x", cx + (config.hubRadius + 15) * mortArm.dx + 40 * mortArm.px)
-                .attr("y", cy + (config.hubRadius + 15) * mortArm.dy + 40 * mortArm.py)
-                .attr("fill", "var(--female-mort)")
-                .attr("font-size", "9px")
-                .attr("font-weight", "700")
-                .attr("text-anchor", "middle")
-                .text("FEMALE");
-
-            // Fertility arm labels for all 7 cohorts
+            // Fertility arm: All 7 cohorts clearly rendered with high contrast badges
             for(let j=0; j<7; j++) {
                 const r = config.hubRadius + (j + 1) * config.armStep * 1.35;
                 const by = cy + r;
-                fertArm.armG.append("text")
-                    .attr("x", cx + 54)
-                    .attr("y", by)
-                    .attr("text-anchor", "start")
+                
+                const fBadge = fertArm.armG.append("g");
+                fBadge.append("rect")
+                    .attr("x", cx + 48)
+                    .attr("y", by - 7)
+                    .attr("width", 42)
+                    .attr("height", 14)
+                    .attr("rx", 3)
+                    .attr("fill", "#0B1120")
+                    .attr("stroke", "rgba(168, 85, 247, 0.45)")
+                    .attr("stroke-width", 0.9);
+                    
+                fBadge.append("text")
+                    .attr("x", cx + 69)
+                    .attr("y", by + 0.5)
+                    .attr("text-anchor", "middle")
                     .attr("alignment-baseline", "middle")
-                    .attr("fill", "#94A3B8")
-                    .attr("font-size", "8.5px")
+                    .attr("fill", "#F1F5F9")
+                    .attr("font-size", "9px")
                     .attr("font-family", "Inter")
-                    .attr("font-weight", "500")
+                    .attr("font-weight", "700")
                     .text(FERT_LABELS[j]);
             }
         }
@@ -824,9 +869,10 @@
         function renderBars(data, popArm, mortArm, fertArm, scalePop, scaleMort, scaleFert, isGhost) {
             const cx = 300, cy = 275;
             
-            // Draw Population and Mortality Cohorts
+            // Draw Population and Mortality Cohorts with central channel gap for milestone badges
             const drawCohorts = (arm, maleData, femaleData, scale, maleColor, femaleColor, categoryName) => {
                 const {dx, dy, px, py, armG} = arm;
+                const gap = 16; // 32px clear center channel for milestone age labels
                 
                 for(let i=0; i<18; i++) {
                     const r = config.hubRadius + (i + 1) * config.armStep;
@@ -838,16 +884,26 @@
                     const mLen = scale(mVal);
                     const fLen = scale(fVal);
                     
+                    const mStartX = bx - gap * px;
+                    const mStartY = by - gap * py;
+                    const mEndX = bx - (gap + mLen) * px;
+                    const mEndY = by - (gap + mLen) * py;
+                    
+                    const fStartX = bx + gap * px;
+                    const fStartY = by + gap * py;
+                    const fEndX = bx + (gap + fLen) * px;
+                    const fEndY = by + (gap + fLen) * py;
+                    
                     if(isGhost) {
                         armG.append("line")
-                            .attr("x1", bx).attr("y1", by)
-                            .attr("x2", bx - mLen * px).attr("y2", by - mLen * py)
+                            .attr("x1", mStartX).attr("y1", mStartY)
+                            .attr("x2", mEndX).attr("y2", mEndY)
                             .attr("stroke", "rgba(255,255,255,0.2)")
                             .attr("stroke-width", 2)
                             .attr("stroke-dasharray", "2,2");
                         armG.append("line")
-                            .attr("x1", bx).attr("y1", by)
-                            .attr("x2", bx + fLen * px).attr("y2", by + fLen * py)
+                            .attr("x1", fStartX).attr("y1", fStartY)
+                            .attr("x2", fEndX).attr("y2", fEndY)
                             .attr("stroke", "rgba(255,255,255,0.2)")
                             .attr("stroke-width", 2)
                             .attr("stroke-dasharray", "2,2");
@@ -855,16 +911,16 @@
                         // Male Bar
                         armG.append("line")
                             .attr("class", "glyph-bar")
-                            .attr("x1", bx).attr("y1", by)
-                            .attr("x2", bx - mLen * px).attr("y2", by - mLen * py)
+                            .attr("x1", mStartX).attr("y1", mStartY)
+                            .attr("x2", mEndX).attr("y2", mEndY)
                             .attr("stroke", maleColor)
                             .attr("stroke-width", 5.5)
                             .attr("stroke-linecap", "round")
                             .on("mouseover", (e) => {
                                 showTooltip(e, `
                                     <div style="font-weight:700; color:${maleColor}; margin-bottom:2px">${categoryName} (Male)</div>
-                                    <div style="color:var(--text-main); font-size:11px">Age Cohort: <strong>${AGE_LABELS[i]}</strong></div>
-                                    <div style="color:${maleColor}; font-weight:600">${mVal}% ${categoryName === 'Population' ? 'of total pop' : 'of deaths'}</div>
+                                    <div style="color:var(--text-main); font-size:12px">Age Cohort: <strong>${AGE_LABELS[i]}</strong></div>
+                                    <div style="color:${maleColor}; font-weight:700; font-size:13px">${mVal}% ${categoryName === 'Population' ? 'of total pop' : 'of deaths'}</div>
                                 `);
                             })
                             .on("mousemove", moveTooltip)
@@ -873,16 +929,16 @@
                         // Female Bar
                         armG.append("line")
                             .attr("class", "glyph-bar")
-                            .attr("x1", bx).attr("y1", by)
-                            .attr("x2", bx + fLen * px).attr("y2", by + fLen * py)
+                            .attr("x1", fStartX).attr("y1", fStartY)
+                            .attr("x2", fEndX).attr("y2", fEndY)
                             .attr("stroke", femaleColor)
                             .attr("stroke-width", 5.5)
                             .attr("stroke-linecap", "round")
                             .on("mouseover", (e) => {
                                 showTooltip(e, `
                                     <div style="font-weight:700; color:${femaleColor}; margin-bottom:2px">${categoryName} (Female)</div>
-                                    <div style="color:var(--text-main); font-size:11px">Age Cohort: <strong>${AGE_LABELS[i]}</strong></div>
-                                    <div style="color:${femaleColor}; font-weight:600">${fVal}% ${categoryName === 'Population' ? 'of total pop' : 'of deaths'}</div>
+                                    <div style="color:var(--text-main); font-size:12px">Age Cohort: <strong>${AGE_LABELS[i]}</strong></div>
+                                    <div style="color:${femaleColor}; font-weight:700; font-size:13px">${fVal}% ${categoryName === 'Population' ? 'of total pop' : 'of deaths'}</div>
                                 `);
                             })
                             .on("mousemove", moveTooltip)
