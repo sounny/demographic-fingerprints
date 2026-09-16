@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Population DNA: Interactive Demographic Fingerprints</title>
+    <title>Demographic Fingerprints: Interactive Population Profiles</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
     <script src="https://d3js.org/d3.v7.min.js"></script>
     <script src="https://unpkg.com/topojson-client@3"></script>
@@ -109,15 +109,29 @@
             height: 100%;
         }
         
-        .state { fill: #1E293B; stroke: #475569; stroke-width: 0.5; transition: fill 0.2s; cursor: pointer;}
+        .state { fill: #1E293B; stroke: #475569; stroke-width: 0.5; transition: fill 0.2s, opacity 0.3s; cursor: pointer;}
         .state:hover { fill: #0EA5E9; }
-        .state.active { fill: #0284C7; stroke: #38BDF8; stroke-width: 1; }
+        .state.active { fill: #101B2E; stroke: #38BDF8; stroke-width: 1.2; }
         
-        .county { fill: transparent; stroke: #334155; stroke-width: 0.2; cursor: pointer; transition: fill 0.2s;}
-        .county:hover { fill: rgba(14, 165, 233, 0.5); }
-        .county.active { fill: rgba(56, 189, 248, 0.7); stroke: #E0F2FE; stroke-width: 0.5; }
+        .county {
+            fill: rgba(30, 41, 59, 0.4);
+            stroke: rgba(148, 163, 184, 0.22);
+            stroke-width: 0.35;
+            cursor: pointer;
+            transition: fill 0.15s ease, stroke 0.15s ease, stroke-width 0.15s ease;
+        }
+        .county:hover {
+            fill: rgba(56, 189, 248, 0.35);
+            stroke: #38BDF8;
+            stroke-width: 1.2;
+        }
+        .county.active {
+            fill: rgba(56, 189, 248, 0.7);
+            stroke: #FFFFFF;
+            stroke-width: 1.5;
+        }
         
-        .state-mesh { fill: none; stroke: rgba(255,255,255,0.1); stroke-width: 0.5; pointer-events: none;}
+        .state-mesh { fill: none; stroke: rgba(255,255,255,0.12); stroke-width: 0.5; pointer-events: none;}
 
         .watermark {
             position: absolute;
@@ -126,7 +140,19 @@
             font-size: 11px;
             color: var(--text-muted);
             pointer-events: none;
-            opacity: 0.6;
+            opacity: 0.7;
+            background: rgba(7, 11, 20, 0.6);
+            padding: 4px 8px;
+            border-radius: 4px;
+        }
+
+        .glyph-bar {
+            cursor: pointer;
+            transition: stroke-width 0.15s ease, opacity 0.15s ease;
+        }
+        .glyph-bar:hover {
+            stroke-width: 8 !important;
+            opacity: 1 !important;
         }
 
         /* Glyph Panel */
@@ -211,37 +237,37 @@
 
     <div id="loading">
         <div class="spinner"></div>
-        <div id="loading-text">Loading Population DNA Data...</div>
+        <div id="loading-text">Loading Demographic Data...</div>
     </div>
 
     <div id="topbar">
         <div class="brand">
-            <span class="brand-pill">DNA</span>
-            <span>Population DNA</span>
-            <span style="font-weight:400; font-size:11px; color:#94A3B8; margin-left:8px;">Dr. Moulay Anwar Sounny-Slitine, TSU</span>
+            <span class="brand-pill">TRIAD</span>
+            <span>Demographic Fingerprints</span>
+            <span style="font-weight:400; font-size:11px; color:#94A3B8; margin-left:8px;">Dr. Anwar Sounny-Slitine</span>
         </div>
         <div class="controls">
             <div class="breadcrumbs" id="breadcrumbs">
                 <span data-level="nation" class="active">USA</span>
             </div>
-            <input type="text" id="search" placeholder="Search state (e.g., Texas)" />
+            <input type="text" id="search" placeholder="Search state (e.g. Texas)" />
             <button id="export-btn">Export PNG</button>
         </div>
     </div>
 
     <div id="story-chips">
         <div class="chip" data-search="Utah">Utah (Young & Fertile)</div>
-        <div class="chip" data-search="Florida">Florida (Retirement)</div>
+        <div class="chip" data-search="Florida">Florida (Aging & Retirement)</div>
         <div class="chip" data-search="District of Columbia">DC (Urban Singles)</div>
-        <div class="chip" data-search="Texas">Texas</div>
-        <div class="chip" data-search="Maine">Maine (Aging)</div>
-        <div class="chip" data-search="California">California</div>
+        <div class="chip" data-search="Texas">Texas (Rapid Growth)</div>
+        <div class="chip" data-search="Maine">Maine (Oldest Median Age)</div>
+        <div class="chip" data-search="California">California (Diverse Metro)</div>
     </div>
 
     <div id="main">
         <div id="panel-left">
             <svg id="map-svg"></svg>
-            <div class="watermark">Click a state to zoom. Click a county to inspect.</div>
+            <div class="watermark">Click a state to zoom. Mouse over counties for details.</div>
             <div class="tooltip" id="map-tooltip"></div>
         </div>
         
@@ -271,14 +297,21 @@
     </div>
 
     <script>
-        // --- DATA STRUCTURES AND STATE ---
+        // === DATA STRUCTURES AND LABELS ===
+        const AGE_LABELS = [
+            '0-4', '5-9', '10-14', '15-19', '20-24', '25-29',
+            '30-34', '35-39', '40-44', '45-49', '50-54', '55-59',
+            '60-64', '65-69', '70-74', '75-79', '80-84', '85+'
+        ];
+        const FERT_LABELS = ['15-19', '20-24', '25-29', '30-34', '35-39', '40-44', '45-49'];
+
         const state = {
             usTopo: null,
             countyTopo: null,
             nationalDemo: null,
             stateDemo: {},
             countyDemo: {},
-            currentLevel: 'nation', // nation, state, county
+            currentLevel: 'nation',
             currentFips: 'US',
             zoomTransform: d3.zoomIdentity
         };
@@ -288,15 +321,15 @@
             mapHeight: 0,
             glyphWidth: 600,
             glyphHeight: 600,
-            hubRadius: 50,
-            armStep: 12
+            hubRadius: 52,
+            armStep: 11
         };
 
-        // DOM elements
+        // DOM elements: state layer first, county layer on top
         const mapSvg = d3.select("#map-svg");
         const mapG = mapSvg.append("g");
-        const countyG = mapG.append("g").attr("id", "counties-layer").style("opacity", 0);
         const stateG = mapG.append("g").attr("id", "states-layer");
+        const countyG = mapG.append("g").attr("id", "counties-layer").style("opacity", 0).style("pointer-events", "none");
         const meshG = mapG.append("g").attr("id", "mesh-layer");
         const tooltip = d3.select("#map-tooltip");
         const glyphSvg = d3.select("#glyph-svg");
@@ -316,7 +349,7 @@
         
         mapSvg.call(zoom).on("wheel.zoom", null).on("dblclick.zoom", null); // Disable manual zoom
 
-        // --- MOCK DATA GENERATORS (Fallback if fetch fails) ---
+        // === MOCK DATA GENERATORS (Fallback if fetch fails) ===
         function generateDummyDemographics(fips, name) {
             const arr18 = (base, variance) => Array.from({length:18}, (_,i) => {
                 let val = base + Math.random()*variance - variance/2;
@@ -342,7 +375,7 @@
             };
         }
 
-        // --- INITIALIZATION AND FETCHING ---
+        // === INITIALIZATION AND FETCHING ===
         async function init() {
             try {
                 // Dimensions
@@ -432,34 +465,45 @@
             }
         }
 
-        // --- MAP RENDERING ---
+        // === MAP RENDERING ===
         function drawMap() {
-            countyG.selectAll(".county")
-                .data(state.countyTopo.features)
-                .join("path")
-                .attr("class", "county")
-                .attr("d", path)
-                .attr("id", d => "county-"+d.id)
-                .on("mouseover", (e, d) => showTooltip(e, d.properties.name || "County "+d.id))
-                .on("mousemove", moveTooltip)
-                .on("mouseout", hideTooltip)
-                .on("click", (e, d) => {
-                    e.stopPropagation();
-                    selectCounty(d);
-                });
-
             stateG.selectAll(".state")
                 .data(state.usTopo.features)
                 .join("path")
                 .attr("class", "state")
                 .attr("d", path)
-                .attr("id", d => "state-"+d.id)
-                .on("mouseover", (e, d) => showTooltip(e, d.properties.name || "State "+d.id))
+                .attr("id", d => "state-" + d.id)
+                .on("mouseover", (e, d) => {
+                    if (state.currentLevel === 'nation') {
+                        showTooltip(e, `<div style="font-weight:700; color:#38BDF8">${d.properties.name || ('State ' + d.id)}</div><div style="color:#94A3B8; font-size:11px">Click to inspect counties</div>`);
+                    }
+                })
                 .on("mousemove", moveTooltip)
                 .on("mouseout", hideTooltip)
                 .on("click", (e, d) => {
                     e.stopPropagation();
                     selectState(d);
+                });
+
+            countyG.selectAll(".county")
+                .data(state.countyTopo.features)
+                .join("path")
+                .attr("class", "county")
+                .attr("d", path)
+                .attr("id", d => "county-" + d.id)
+                .style("display", "none")
+                .on("mouseover", (e, d) => {
+                    e.stopPropagation();
+                    const sFips = String(d.id).padStart(5, '0').substring(0, 2);
+                    const sName = state.stateDemo[sFips]?.name || "State";
+                    const cName = d.properties.name ? (d.properties.name + " County") : ("County " + d.id);
+                    showTooltip(e, `<div style="font-weight:700; color:#38BDF8">${cName}</div><div style="color:#94A3B8; font-size:11px">${sName}</div>`);
+                })
+                .on("mousemove", moveTooltip)
+                .on("mouseout", hideTooltip)
+                .on("click", (e, d) => {
+                    e.stopPropagation();
+                    selectCounty(d);
                 });
 
             meshG.append("path")
@@ -476,7 +520,7 @@
             const dy = bounds[1][1] - bounds[0][1];
             const x = (bounds[0][0] + bounds[1][0]) / 2;
             const y = (bounds[0][1] + bounds[1][1]) / 2;
-            const scale = Math.max(1, Math.min(8, 0.9 / Math.max(dx / config.mapWidth, dy / config.mapHeight)));
+            const scale = Math.max(1, Math.min(8, 0.85 / Math.max(dx / config.mapWidth, dy / config.mapHeight)));
             const translate = [config.mapWidth / 2 - scale * x, config.mapHeight / 2 - scale * y];
 
             mapSvg.transition().duration(750).call(
@@ -484,14 +528,17 @@
                 d3.zoomIdentity.translate(translate[0], translate[1]).scale(scale)
             );
 
-            stateG.selectAll(".state").classed("active", false).style("opacity", 0.3);
-            d3.select("#state-"+feature.id).classed("active", true).style("opacity", 1);
+            stateG.selectAll(".state").classed("active", false).transition().duration(300).style("opacity", 0.15);
+            d3.select("#state-" + feature.id).classed("active", true).transition().duration(300).style("opacity", 1);
             
-            countyG.transition().duration(750).style("opacity", 1);
+            const stateFips = String(feature.id).padStart(2, '0');
             
-            const stateFips = feature.id.substring(0, 2);
-            countyG.selectAll(".county").style("display", d => d.id.startsWith(stateFips) ? "block" : "none")
+            // Reveal counties of this state with faint boundary
+            countyG.selectAll(".county")
+                   .style("display", d => String(d.id).padStart(5, '0').startsWith(stateFips) ? "block" : "none")
                    .classed("active", false);
+            
+            countyG.transition().duration(750).style("opacity", 1).style("pointer-events", "all");
 
             const sName = feature.properties.name || state.stateDemo[feature.id]?.name || "State";
             updateView('state', feature.id, sName);
@@ -499,34 +546,57 @@
 
         function selectCounty(feature) {
             countyG.selectAll(".county").classed("active", false);
-            d3.select("#county-"+feature.id).classed("active", true);
+            d3.select("#county-" + feature.id).classed("active", true);
             
-            const stateFips = feature.id.substring(0,2);
+            const fips5 = String(feature.id).padStart(5, '0');
+            const stateFips = fips5.substring(0, 2);
             const sName = state.stateDemo[stateFips]?.name || "State";
-            const cName = feature.properties.name || state.countyDemo[feature.id]?.name || "County";
+            const cName = (feature.properties.name || "County") + " County";
             
-            updateView('county', feature.id, cName, {stateId: stateFips, stateName: sName});
+            updateView('county', fips5, cName, {stateId: stateFips, stateName: sName});
         }
 
         function resetMap() {
             mapSvg.transition().duration(750).call(
                 zoom.transform, d3.zoomIdentity
             );
-            stateG.selectAll(".state").classed("active", false).style("opacity", 1);
-            countyG.transition().duration(750).style("opacity", 0);
-            setTimeout(() => { countyG.selectAll(".county").classed("active", false); }, 750);
+            stateG.selectAll(".state").classed("active", false).transition().duration(300).style("opacity", 1);
+            countyG.transition().duration(400).style("opacity", 0).style("pointer-events", "none");
+            setTimeout(() => { 
+                countyG.selectAll(".county").classed("active", false).style("display", "none"); 
+            }, 450);
             updateView('nation', 'US', 'United States');
         }
 
-        // --- GLYPH RENDERING ---
+        // === GLYPH RENDERING ===
         function updateView(level, fips, name, parentData=null) {
             state.currentLevel = level;
             state.currentFips = fips;
             
             let data = null;
-            if (level === 'nation') data = state.nationalDemo;
-            else if (level === 'state') data = state.stateDemo[fips] || generateDummyDemographics(fips, name);
-            else if (level === 'county') data = state.countyDemo[fips] || generateDummyDemographics(fips, name);
+            if (level === 'nation') {
+                data = state.nationalDemo;
+            } else if (level === 'state') {
+                data = state.stateDemo[fips] || generateDummyDemographics(fips, name);
+            } else if (level === 'county') {
+                if (state.countyDemo[fips]) {
+                    data = state.countyDemo[fips];
+                } else {
+                    const stData = state.stateDemo[parentData?.stateId] || state.nationalDemo;
+                    data = {
+                        fips: fips,
+                        name: name,
+                        total_pop: Math.round(stData.total_pop / 30),
+                        median_age: stData.median_age,
+                        pop_m_pct: [...stData.pop_m_pct],
+                        pop_f_pct: [...stData.pop_f_pct],
+                        mort_m_pct: [...stData.mort_m_pct],
+                        mort_f_pct: [...stData.mort_f_pct],
+                        fertility_pasfr: [...stData.fertility_pasfr],
+                        tfr: stData.tfr
+                    };
+                }
+            }
 
             if (!data) return;
 
@@ -560,62 +630,76 @@
         function drawGlyph(data, baselineData) {
             glyphSvg.selectAll("*").remove();
 
-            const cx = 300, cy = 280;
+            const cx = 300, cy = 275;
             const g = glyphSvg.append("g");
 
-            const drawArm = (angleDeg, label, isFertility=false) => {
+            const drawArmSpine = (angleDeg, label, isFertility=false) => {
                 const angle = angleDeg * Math.PI / 180;
                 const dx = Math.cos(angle), dy = Math.sin(angle);
                 const px = -Math.sin(angle), py = Math.cos(angle);
                 
                 const armG = g.append("g").attr("class", "arm");
                 
-                const armLen = isFertility ? 7 * config.armStep + 20 : 18 * config.armStep + 20;
+                const armLen = isFertility ? 7 * config.armStep * 1.35 + 30 : 18 * config.armStep + 25;
                 armG.append("line")
                     .attr("x1", cx + config.hubRadius * dx)
                     .attr("y1", cy + config.hubRadius * dy)
                     .attr("x2", cx + (config.hubRadius + armLen) * dx)
                     .attr("y2", cy + (config.hubRadius + armLen) * dy)
-                    .attr("stroke", "rgba(255,255,255,0.1)")
-                    .attr("stroke-width", 2);
+                    .attr("stroke", "rgba(255,255,255,0.15)")
+                    .attr("stroke-width", 1.5)
+                    .attr("stroke-dasharray", "2,2");
                     
-                const lx = cx + (config.hubRadius + armLen + 15) * dx;
-                const ly = cy + (config.hubRadius + armLen + 15) * dy;
+                const lx = cx + (config.hubRadius + armLen + 20) * dx;
+                const ly = cy + (config.hubRadius + armLen + 20) * dy;
+                
                 armG.append("text")
                     .attr("x", lx)
                     .attr("y", ly)
                     .attr("text-anchor", "middle")
                     .attr("alignment-baseline", "middle")
-                    .attr("fill", "var(--text-muted)")
+                    .attr("fill", "var(--text-main)")
                     .attr("font-size", "12px")
-                    .attr("font-weight", "600")
-                    .attr("transform", `rotate(${angleDeg + (angleDeg > -90 && angleDeg < 90 ? 0 : 180)}, ${lx}, ${ly})`)
+                    .attr("font-weight", "700")
+                    .attr("letter-spacing", "0.08em")
                     .text(label.toUpperCase());
                     
                 return {dx, dy, px, py, armG};
             };
 
-            const popArm = drawArm(-135, "Population");
-            const mortArm = drawArm(-45, "Mortality");
-            const fertArm = drawArm(90, "Fertility", true);
+            const popArm = drawArmSpine(-135, "Population");
+            const mortArm = drawArmSpine(-45, "Mortality");
+            const fertArm = drawArmSpine(90, "Fertility", true);
 
-            const scalePop = d3.scaleLinear().domain([0, 6]).range([0, 80]); 
-            const scaleMort = d3.scaleLinear().domain([0, 25]).range([0, 80]); 
-            const scaleFert = d3.scaleLinear().domain([0, 40]).range([0, 60]); 
+            // Calibrated scales: population cohorts ~0-5%, mortality cohorts ~0-12%, fertility PASFR ~0-40%
+            const scalePop = d3.scaleLinear().domain([0, 5]).range([0, 85]); 
+            const scaleMort = d3.scaleLinear().domain([0, 12]).range([0, 85]); 
+            const scaleFert = d3.scaleLinear().domain([0, 40]).range([0, 75]); 
             
             if (baselineData) {
                 renderBars(baselineData, popArm, mortArm, fertArm, scalePop, scaleMort, scaleFert, true);
             }
             renderBars(data, popArm, mortArm, fertArm, scalePop, scaleMort, scaleFert, false);
 
+            // Add Age Cohort Labels along arms
+            renderAgeLabels(popArm, mortArm, fertArm, cx, cy);
+
+            // Central Hub
             const hub = g.append("g").attr("class", "hub");
             hub.append("circle")
                 .attr("cx", cx).attr("cy", cy)
                 .attr("r", config.hubRadius)
-                .attr("fill", "var(--bg-card)")
+                .attr("fill", "#0B1120")
                 .attr("stroke", "var(--border)")
                 .attr("stroke-width", 2);
                 
+            hub.append("circle")
+                .attr("cx", cx).attr("cy", cy)
+                .attr("r", config.hubRadius - 4)
+                .attr("fill", "none")
+                .attr("stroke", "rgba(56, 189, 248, 0.3)")
+                .attr("stroke-width", 1);
+
             const fo = hub.append("foreignObject")
                 .attr("x", cx - config.hubRadius)
                 .attr("y", cy - config.hubRadius)
@@ -630,17 +714,118 @@
                 .style("align-items", "center")
                 .style("justify-content", "center")
                 .style("text-align", "center")
-                .style("color", "var(--text-main)")
-                .style("font-size", "10px")
+                .style("user-select", "none")
                 .html(`
-                    <div style="font-weight:700; color:var(--male-pop); font-size:11px">${data.median_age}</div>
-                    <div style="font-size:8px; color:var(--text-muted)">Med Age</div>
+                    <div style="font-weight:800; color:var(--male-pop); font-size:15px; line-height:1.1">${data.median_age}</div>
+                    <div style="font-size:9px; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.06em">Med Age</div>
                 `);
         }
 
+        function renderAgeLabels(popArm, mortArm, fertArm, cx, cy) {
+            const milestones = [
+                {idx: 0, label: '0-4'},
+                {idx: 4, label: '20-24'},
+                {idx: 8, label: '40-44'},
+                {idx: 13, label: '65-69'},
+                {idx: 17, label: '85+'}
+            ];
+
+            // Population arm milestone labels
+            milestones.forEach(m => {
+                const r = config.hubRadius + (m.idx + 1) * config.armStep;
+                const bx = cx + r * popArm.dx;
+                const by = cy + r * popArm.dy;
+                const tx = bx - 14 * popArm.px;
+                const ty = by - 14 * popArm.py;
+                popArm.armG.append("text")
+                    .attr("x", tx).attr("y", ty)
+                    .attr("text-anchor", "middle")
+                    .attr("alignment-baseline", "middle")
+                    .attr("fill", "#64748B")
+                    .attr("font-size", "8px")
+                    .attr("font-family", "Inter")
+                    .attr("font-weight", "600")
+                    .text(m.label);
+            });
+
+            // Male / Female tags on Population arm
+            popArm.armG.append("text")
+                .attr("x", cx + (config.hubRadius + 15) * popArm.dx - 40 * popArm.px)
+                .attr("y", cy + (config.hubRadius + 15) * popArm.dy - 40 * popArm.py)
+                .attr("fill", "var(--male-pop)")
+                .attr("font-size", "9px")
+                .attr("font-weight", "700")
+                .attr("text-anchor", "middle")
+                .text("MALE");
+
+            popArm.armG.append("text")
+                .attr("x", cx + (config.hubRadius + 15) * popArm.dx + 40 * popArm.px)
+                .attr("y", cy + (config.hubRadius + 15) * popArm.dy + 40 * popArm.py)
+                .attr("fill", "var(--female-pop)")
+                .attr("font-size", "9px")
+                .attr("font-weight", "700")
+                .attr("text-anchor", "middle")
+                .text("FEMALE");
+
+            // Mortality arm milestone labels
+            milestones.forEach(m => {
+                const r = config.hubRadius + (m.idx + 1) * config.armStep;
+                const bx = cx + r * mortArm.dx;
+                const by = cy + r * mortArm.dy;
+                const tx = bx + 14 * mortArm.px;
+                const ty = by + 14 * mortArm.py;
+                mortArm.armG.append("text")
+                    .attr("x", tx).attr("y", ty)
+                    .attr("text-anchor", "middle")
+                    .attr("alignment-baseline", "middle")
+                    .attr("fill", "#64748B")
+                    .attr("font-size", "8px")
+                    .attr("font-family", "Inter")
+                    .attr("font-weight", "600")
+                    .text(m.label);
+            });
+
+            // Male / Female tags on Mortality arm
+            mortArm.armG.append("text")
+                .attr("x", cx + (config.hubRadius + 15) * mortArm.dx - 40 * mortArm.px)
+                .attr("y", cy + (config.hubRadius + 15) * mortArm.dy - 40 * mortArm.py)
+                .attr("fill", "var(--male-mort)")
+                .attr("font-size", "9px")
+                .attr("font-weight", "700")
+                .attr("text-anchor", "middle")
+                .text("MALE");
+
+            mortArm.armG.append("text")
+                .attr("x", cx + (config.hubRadius + 15) * mortArm.dx + 40 * mortArm.px)
+                .attr("y", cy + (config.hubRadius + 15) * mortArm.dy + 40 * mortArm.py)
+                .attr("fill", "var(--female-mort)")
+                .attr("font-size", "9px")
+                .attr("font-weight", "700")
+                .attr("text-anchor", "middle")
+                .text("FEMALE");
+
+            // Fertility arm labels for all 7 cohorts
+            for(let j=0; j<7; j++) {
+                const r = config.hubRadius + (j + 1) * config.armStep * 1.35;
+                const by = cy + r;
+                fertArm.armG.append("text")
+                    .attr("x", cx + 54)
+                    .attr("y", by)
+                    .attr("text-anchor", "start")
+                    .attr("alignment-baseline", "middle")
+                    .attr("fill", "#94A3B8")
+                    .attr("font-size", "8.5px")
+                    .attr("font-family", "Inter")
+                    .attr("font-weight", "500")
+                    .text(FERT_LABELS[j]);
+            }
+        }
+
         function renderBars(data, popArm, mortArm, fertArm, scalePop, scaleMort, scaleFert, isGhost) {
-            const cx = 300, cy = 280;
-            const drawCohorts = (arm, maleData, femaleData, scale, maleColor, femaleColor) => {
+            const cx = 300, cy = 275;
+            
+            // Draw Population and Mortality Cohorts
+            const drawCohorts = (arm, maleData, femaleData, scale, maleColor, femaleColor, categoryName) => {
                 const {dx, dy, px, py, armG} = arm;
                 
                 for(let i=0; i<18; i++) {
@@ -648,8 +833,10 @@
                     const bx = cx + r * dx;
                     const by = cy + r * dy;
                     
-                    const mLen = scale(maleData[i] || 0);
-                    const fLen = scale(femaleData[i] || 0);
+                    const mVal = maleData[i] || 0;
+                    const fVal = femaleData[i] || 0;
+                    const mLen = scale(mVal);
+                    const fLen = scale(fVal);
                     
                     if(isGhost) {
                         armG.append("line")
@@ -665,29 +852,54 @@
                             .attr("stroke-width", 2)
                             .attr("stroke-dasharray", "2,2");
                     } else {
+                        // Male Bar
                         armG.append("line")
+                            .attr("class", "glyph-bar")
                             .attr("x1", bx).attr("y1", by)
                             .attr("x2", bx - mLen * px).attr("y2", by - mLen * py)
                             .attr("stroke", maleColor)
-                            .attr("stroke-width", 6)
-                            .attr("stroke-linecap", "round");
+                            .attr("stroke-width", 5.5)
+                            .attr("stroke-linecap", "round")
+                            .on("mouseover", (e) => {
+                                showTooltip(e, `
+                                    <div style="font-weight:700; color:${maleColor}; margin-bottom:2px">${categoryName} (Male)</div>
+                                    <div style="color:var(--text-main); font-size:11px">Age Cohort: <strong>${AGE_LABELS[i]}</strong></div>
+                                    <div style="color:${maleColor}; font-weight:600">${mVal}% ${categoryName === 'Population' ? 'of total pop' : 'of deaths'}</div>
+                                `);
+                            })
+                            .on("mousemove", moveTooltip)
+                            .on("mouseout", hideTooltip);
+
+                        // Female Bar
                         armG.append("line")
+                            .attr("class", "glyph-bar")
                             .attr("x1", bx).attr("y1", by)
                             .attr("x2", bx + fLen * px).attr("y2", by + fLen * py)
                             .attr("stroke", femaleColor)
-                            .attr("stroke-width", 6)
-                            .attr("stroke-linecap", "round");
+                            .attr("stroke-width", 5.5)
+                            .attr("stroke-linecap", "round")
+                            .on("mouseover", (e) => {
+                                showTooltip(e, `
+                                    <div style="font-weight:700; color:${femaleColor}; margin-bottom:2px">${categoryName} (Female)</div>
+                                    <div style="color:var(--text-main); font-size:11px">Age Cohort: <strong>${AGE_LABELS[i]}</strong></div>
+                                    <div style="color:${femaleColor}; font-weight:600">${fVal}% ${categoryName === 'Population' ? 'of total pop' : 'of deaths'}</div>
+                                `);
+                            })
+                            .on("mousemove", moveTooltip)
+                            .on("mouseout", hideTooltip);
                     }
                 }
             };
 
+            // Draw Fertility Cohorts
             const drawFertility = (arm, fertData, scale, color) => {
                 const {dx, dy, px, py, armG} = arm;
                 for(let i=0; i<7; i++) {
-                    const r = config.hubRadius + (i + 1) * config.armStep;
+                    const r = config.hubRadius + (i + 1) * config.armStep * 1.35;
                     const bx = cx + r * dx;
                     const by = cy + r * dy;
-                    const len = scale(fertData[i] || 0) / 2;
+                    const val = fertData[i] || 0;
+                    const len = scale(val) / 2;
                     
                     if(isGhost) {
                         armG.append("line")
@@ -698,27 +910,37 @@
                             .attr("stroke-dasharray", "2,2");
                     } else {
                         armG.append("line")
+                            .attr("class", "glyph-bar")
                             .attr("x1", bx - len * px).attr("y1", by - len * py)
                             .attr("x2", bx + len * px).attr("y2", by + len * py)
                             .attr("stroke", color)
-                            .attr("stroke-width", 6)
-                            .attr("stroke-linecap", "round");
+                            .attr("stroke-width", 5.5)
+                            .attr("stroke-linecap", "round")
+                            .on("mouseover", (e) => {
+                                showTooltip(e, `
+                                    <div style="font-weight:700; color:${color}; margin-bottom:2px">Fertility (PASFR)</div>
+                                    <div style="color:var(--text-main); font-size:11px">Maternal Age: <strong>${FERT_LABELS[i]}</strong></div>
+                                    <div style="color:${color}; font-weight:600">${val}% of births</div>
+                                `);
+                            })
+                            .on("mousemove", moveTooltip)
+                            .on("mouseout", hideTooltip);
                     }
                 }
             };
 
-            drawCohorts(popArm, data.pop_m_pct, data.pop_f_pct, scalePop, "var(--male-pop)", "var(--female-pop)");
-            drawCohorts(mortArm, data.mort_m_pct, data.mort_f_pct, scaleMort, "var(--male-mort)", "var(--female-mort)");
+            drawCohorts(popArm, data.pop_m_pct, data.pop_f_pct, scalePop, "var(--male-pop)", "var(--female-pop)", "Population");
+            drawCohorts(mortArm, data.mort_m_pct, data.mort_f_pct, scaleMort, "var(--male-mort)", "var(--female-mort)", "Mortality");
             drawFertility(fertArm, data.fertility_pasfr, scaleFert, "var(--fertility)");
         }
 
-        // --- UTILS & EVENTS ---
+        // === UTILS & EVENTS ===
         function showTooltip(e, text) {
             tooltip.style("opacity", 1).html(text);
         }
         function moveTooltip(e) {
-            tooltip.style("left", (e.pageX + 10) + "px")
-                   .style("top", (e.pageY + 10) + "px");
+            tooltip.style("left", (e.pageX + 12) + "px")
+                   .style("top", (e.pageY + 12) + "px");
         }
         function hideTooltip() {
             tooltip.style("opacity", 0);
@@ -751,9 +973,9 @@
             d3.select("#export-btn").on("click", async () => {
                 const rightPanel = document.getElementById("panel-right");
                 try {
-                    const canvas = await html2canvas(rightPanel, {backgroundColor: "#0F172A"});
+                    const canvas = await html2canvas(rightPanel, {backgroundColor: "#0F172A", scale: 2});
                     const link = document.createElement("a");
-                    link.download = `population_dna_${state.currentFips}.png`;
+                    link.download = `demographic_fingerprint_${state.currentFips}.png`;
                     link.href = canvas.toDataURL("image/png");
                     link.click();
                 } catch(e) {
