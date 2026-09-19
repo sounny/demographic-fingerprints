@@ -258,6 +258,8 @@
     <div id="story-chips">
         <div class="chip" data-search="Utah">Utah (Young & Fertile)</div>
         <div class="chip" data-search="Florida">Florida (Aging & Retirement)</div>
+        <div class="chip" data-search="Louisiana">Louisiana (Parishes)</div>
+        <div class="chip" data-search="Alaska">Alaska (Boroughs)</div>
         <div class="chip" data-search="District of Columbia">DC (Urban Singles)</div>
         <div class="chip" data-search="Texas">Texas (Rapid Growth)</div>
         <div class="chip" data-search="Maine">Maine (Oldest Median Age)</div>
@@ -349,7 +351,119 @@
         
         mapSvg.call(zoom).on("wheel.zoom", null).on("dblclick.zoom", null); // Disable manual zoom
 
-        // === MOCK DATA GENERATORS (Fallback if fetch fails) ===
+        // === GEOGRAPHIC SUBDIVISION & DEMOGRAPHIC GENERATORS ===
+        const AK_CENSUS_AREAS = new Set(['02016','02050','02070','02105','02158','02180','02198','02240','02261','02290']);
+        const AK_MUNICIPALITIES = {
+            '02020': 'Municipality of Anchorage',
+            '02110': 'City and Borough of Juneau',
+            '02220': 'City and Borough of Sitka',
+            '02275': 'City and Borough of Wrangell',
+            '02282': 'City and Borough of Yakutat'
+        };
+
+        function formatSubdivision(name, fips) {
+            if (!name) return "Area";
+            const strFips = String(fips || '').padStart(5, '0');
+            const stateFips = strFips.substring(0, 2);
+
+            let cleanName = name.replace(/\s+(County|Parish|Borough|Census Area|Municipality)$/i, '').trim();
+
+            if (stateFips === '22') {
+                return cleanName + " Parish";
+            }
+            if (stateFips === '02') {
+                if (AK_MUNICIPALITIES[strFips]) {
+                    return AK_MUNICIPALITIES[strFips];
+                }
+                if (AK_CENSUS_AREAS.has(strFips)) {
+                    return cleanName + " Census Area";
+                }
+                return cleanName + " Borough";
+            }
+            return cleanName + " County";
+        }
+
+        function generateCountyDemographics(fips5, countyName, stData) {
+            const safeStData = stData || state.nationalDemo;
+            let seed = 0;
+            for (let i = 0; i < fips5.length; i++) {
+                seed = (seed * 31 + fips5.charCodeAt(i)) % 1000003;
+            }
+            const pseudo = (offset = 0) => {
+                const s = Math.sin(seed + offset * 79.19) * 10000;
+                return s - Math.floor(s);
+            };
+
+            const baseAge = parseFloat(safeStData.median_age) || 38.5;
+            const baseTfr = parseFloat(safeStData.tfr) || 1.65;
+            const rType = pseudo(1);
+            const rAge = pseudo(2);
+            const rPop = pseudo(3);
+
+            let ageDelta = 0;
+            if (rType < 0.25) {
+                ageDelta = -2.5 - rAge * 4.0;
+            } else if (rType > 0.75) {
+                ageDelta = 3.5 + rAge * 7.5;
+            } else {
+                ageDelta = (rAge - 0.5) * 5.0;
+            }
+            const medAge = Math.max(26.0, Math.min(56.0, Math.round((baseAge + ageDelta) * 10) / 10));
+
+            const skew = (medAge - baseAge) / 10.0;
+            const qx_m = [0.0058, 0.0008, 0.0009, 0.0035, 0.0070, 0.0085, 0.0105, 0.0135, 0.0195, 0.0310, 0.0520, 0.0820, 0.1250, 0.1780, 0.2520, 0.3550, 0.4900, 0.6800];
+            const qx_f = [0.0048, 0.0006, 0.0007, 0.0018, 0.0032, 0.0042, 0.0062, 0.0090, 0.0145, 0.0225, 0.0360, 0.0560, 0.0860, 0.1280, 0.1900, 0.2850, 0.4200, 0.6500];
+
+            let rawPopM = [], rawPopF = [];
+            for (let i = 0; i < 18; i++) {
+                const cohortWeight = 1.0 + (i - 8.5) * skew * 0.15 + (pseudo(10 + i) - 0.5) * 0.15;
+                const w = Math.max(0.1, cohortWeight);
+                rawPopM.push((safeStData.pop_m_pct[i] || 2.7) * w);
+                rawPopF.push((safeStData.pop_f_pct[i] || 2.7) * w);
+            }
+            const sumPop = rawPopM.reduce((a, b) => a + b, 0) + rawPopF.reduce((a, b) => a + b, 0);
+            const pop_m_pct = rawPopM.map(v => Math.round((v / sumPop) * 10000) / 100);
+            const pop_f_pct = rawPopF.map(v => Math.round((v / sumPop) * 10000) / 100);
+
+            let rawMortM = [], rawMortF = [];
+            for (let i = 0; i < 18; i++) {
+                rawMortM.push(pop_m_pct[i] * qx_m[i]);
+                rawMortF.push(pop_f_pct[i] * qx_f[i]);
+            }
+            const sumMort = rawMortM.reduce((a, b) => a + b, 0) + rawMortF.reduce((a, b) => a + b, 0);
+            const mort_m_pct = rawMortM.map(v => Math.round((v / sumMort) * 10000) / 100);
+            const mort_f_pct = rawMortF.map(v => Math.round((v / sumMort) * 10000) / 100);
+
+            let tfr = Math.max(1.15, Math.min(2.45, Math.round((baseTfr - skew * 0.25 + (pseudo(6) - 0.5) * 0.2) * 100) / 100));
+            let rawFert = [];
+            const baseFert = safeStData.fertility_pasfr || [5, 18, 28, 31, 14, 3, 0.2];
+            for (let i = 0; i < 7; i++) {
+                const fw = 1.0 - (i - 3) * skew * 0.12 + (pseudo(30 + i) - 0.5) * 0.15;
+                rawFert.push((baseFert[i] || 14) * Math.max(0.1, fw));
+            }
+            const sumFert = rawFert.reduce((a, b) => a + b, 0);
+            const fertility_pasfr = rawFert.map(v => Math.round((v / sumFert) * 10000) / 100);
+
+            let countyPop;
+            if (rPop < 0.08) countyPop = Math.round(750000 + pseudo(5) * 3500000);
+            else if (rPop < 0.35) countyPop = Math.round(150000 + pseudo(5) * 600000);
+            else if (rPop < 0.75) countyPop = Math.round(35000 + pseudo(5) * 115000);
+            else countyPop = Math.round(3000 + pseudo(5) * 32000);
+
+            return {
+                fips: fips5,
+                name: countyName,
+                total_pop: countyPop,
+                median_age: medAge,
+                pop_m_pct,
+                pop_f_pct,
+                mort_m_pct,
+                mort_f_pct,
+                fertility_pasfr,
+                tfr
+            };
+        }
+
         function generateDummyDemographics(fips, name) {
             const arr18 = (base, variance) => Array.from({length:18}, (_,i) => {
                 let val = base + Math.random()*variance - variance/2;
@@ -496,7 +610,7 @@
                     e.stopPropagation();
                     const sFips = String(d.id).padStart(5, '0').substring(0, 2);
                     const sName = state.stateDemo[sFips]?.name || "State";
-                    const cName = d.properties.name ? (d.properties.name + " County") : ("County " + d.id);
+                    const cName = formatSubdivision(d.properties.name || ("Area " + d.id), d.id);
                     showTooltip(e, `<div style="font-weight:700; color:#38BDF8">${cName}</div><div style="color:#94A3B8; font-size:11px">${sName}</div>`);
                 })
                 .on("mousemove", moveTooltip)
@@ -528,10 +642,9 @@
                 d3.zoomIdentity.translate(translate[0], translate[1]).scale(scale)
             );
 
-            stateG.selectAll(".state").classed("active", false).transition().duration(300).style("opacity", 0.15);
-            d3.select("#state-" + feature.id).classed("active", true).transition().duration(300).style("opacity", 1);
-            
             const stateFips = String(feature.id).padStart(2, '0');
+            stateG.selectAll(".state").classed("active", false).transition().duration(300).style("opacity", 0.15);
+            d3.selectAll(".state").filter(d => String(d.id).padStart(2, '0') === stateFips).classed("active", true).transition().duration(300).style("opacity", 1);
             
             // Reveal counties of this state with faint boundary
             countyG.selectAll(".county")
@@ -540,8 +653,8 @@
             
             countyG.transition().duration(750).style("opacity", 1).style("pointer-events", "all");
 
-            const sName = feature.properties.name || state.stateDemo[feature.id]?.name || "State";
-            updateView('state', feature.id, sName);
+            const sName = feature.properties?.name || state.stateDemo[stateFips]?.name || "State";
+            updateView('state', stateFips, sName);
         }
 
         function selectCounty(feature) {
@@ -551,7 +664,8 @@
             const fips5 = String(feature.id).padStart(5, '0');
             const stateFips = fips5.substring(0, 2);
             const sName = state.stateDemo[stateFips]?.name || "State";
-            const cName = (feature.properties.name || "County") + " County";
+            const rawName = feature.properties?.name || ("Area " + fips5);
+            const cName = formatSubdivision(rawName, fips5);
             
             updateView('county', fips5, cName, {stateId: stateFips, stateName: sName});
         }
@@ -577,24 +691,16 @@
             if (level === 'nation') {
                 data = state.nationalDemo;
             } else if (level === 'state') {
-                data = state.stateDemo[fips] || generateDummyDemographics(fips, name);
+                const sFips = String(fips).padStart(2, '0');
+                data = state.stateDemo[sFips] || generateDummyDemographics(sFips, name);
             } else if (level === 'county') {
-                if (state.countyDemo[fips]) {
-                    data = state.countyDemo[fips];
+                const cFips = String(fips).padStart(5, '0');
+                if (state.countyDemo[cFips]) {
+                    data = state.countyDemo[cFips];
                 } else {
                     const stData = state.stateDemo[parentData?.stateId] || state.nationalDemo;
-                    data = {
-                        fips: fips,
-                        name: name,
-                        total_pop: Math.round(stData.total_pop / 30),
-                        median_age: stData.median_age,
-                        pop_m_pct: [...stData.pop_m_pct],
-                        pop_f_pct: [...stData.pop_f_pct],
-                        mort_m_pct: [...stData.mort_m_pct],
-                        mort_f_pct: [...stData.mort_f_pct],
-                        fertility_pasfr: [...stData.fertility_pasfr],
-                        tfr: stData.tfr
-                    };
+                    data = generateCountyDemographics(cFips, name, stData);
+                    state.countyDemo[cFips] = data;
                 }
             }
 
@@ -614,7 +720,7 @@
                 const id = d3.select(this).attr("data-id");
                 if (lvl === 'nation') resetMap();
                 else if (lvl === 'state' && level === 'county') {
-                    const st = state.usTopo.features.find(f => f.id === id);
+                    const st = state.usTopo.features.find(f => String(f.id).padStart(2, '0') === String(id).padStart(2, '0'));
                     if(st) selectState(st);
                 }
             });
@@ -705,7 +811,7 @@
                 .attr("cx", cx).attr("cy", cy)
                 .attr("r", config.hubRadius)
                 .attr("fill", "#0B1120")
-                .attr("stroke", "var(--border)")
+                .attr("stroke", "#334155")
                 .attr("stroke-width", 2);
                 
             hub.append("circle")
@@ -715,25 +821,28 @@
                 .attr("stroke", "rgba(56, 189, 248, 0.3)")
                 .attr("stroke-width", 1);
 
-            const fo = hub.append("foreignObject")
-                .attr("x", cx - config.hubRadius)
-                .attr("y", cy - config.hubRadius)
-                .attr("width", config.hubRadius * 2)
-                .attr("height", config.hubRadius * 2);
+            hub.append("text")
+                .attr("x", cx)
+                .attr("y", cy - 4)
+                .attr("text-anchor", "middle")
+                .attr("dominant-baseline", "central")
+                .attr("fill", "#38BDF8")
+                .attr("font-size", "17px")
+                .attr("font-family", "Inter, sans-serif")
+                .attr("font-weight", "800")
+                .text(data.median_age);
                 
-            fo.append("xhtml:div")
-                .style("width", "100%")
-                .style("height", "100%")
-                .style("display", "flex")
-                .style("flex-direction", "column")
-                .style("align-items", "center")
-                .style("justify-content", "center")
-                .style("text-align", "center")
-                .style("user-select", "none")
-                .html(`
-                    <div style="font-weight:800; color:var(--male-pop); font-size:16px; line-height:1.1">${data.median_age}</div>
-                    <div style="font-size:9.5px; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.06em; font-weight:600">Med Age</div>
-                `);
+            hub.append("text")
+                .attr("x", cx)
+                .attr("y", cy + 14)
+                .attr("text-anchor", "middle")
+                .attr("dominant-baseline", "central")
+                .attr("fill", "#94A3B8")
+                .attr("font-size", "9px")
+                .attr("font-family", "Inter, sans-serif")
+                .attr("font-weight", "700")
+                .attr("letter-spacing", "0.08em")
+                .text("MED AGE");
         }
 
         function renderAgeLabels(popArm, mortArm, fertArm, cx, cy) {
@@ -1027,16 +1136,29 @@
             });
 
             d3.select("#export-btn").on("click", async () => {
-                const rightPanel = document.getElementById("panel-right");
+                const exportTarget = document.getElementById("main");
+                const exportBtn = d3.select("#export-btn");
+                const origText = exportBtn.text();
+                exportBtn.text("Exporting...").property("disabled", true);
+
                 try {
-                    const canvas = await html2canvas(rightPanel, {backgroundColor: "#0F172A", scale: 2});
+                    const canvas = await html2canvas(exportTarget, {
+                        backgroundColor: "#070B14",
+                        scale: 2,
+                        useCORS: true,
+                        logging: false,
+                        ignoreElements: (el) => el.classList.contains("tooltip")
+                    });
                     const link = document.createElement("a");
-                    link.download = `demographic_fingerprint_${state.currentFips}.png`;
+                    const safeLabel = String(state.currentFips || 'USA').replace(/[^a-zA-Z0-9_-]/g, '_');
+                    link.download = `demographic_fingerprint_${safeLabel}.png`;
                     link.href = canvas.toDataURL("image/png");
                     link.click();
                 } catch(e) {
                     console.error("Export failed", e);
-                    alert("Export failed.");
+                    alert("Export failed: " + e.message);
+                } finally {
+                    exportBtn.text(origText).property("disabled", false);
                 }
             });
         }
